@@ -1,0 +1,176 @@
+---
+title: "Lab 3"
+author: "Rui Zong"
+date: "11/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# 1.Download prices for the SPY ETF, dating between 2020-01-01 and 2022-09-30
+# 2.Compute the daily log-returns over this sample period (no need to report)
+# 3.Assume that the price follows a GBM. Calibrate the model and report both mu and sigma (hats)
+
+
+
+
+```{r pressure, echo=FALSE}
+library(quantmod)
+library(lubridate)
+rm(list = ls())
+P <- get(getSymbols("SPY",from = "1900-01-01"))[,6]
+P <- P["2020-01-01/2022-09-30",]
+P_w <- apply.weekly(P,last)
+R <- na.omit(log(P/lag(P)))
+R_w <- na.omit(log(P_w/lag(P_w)))
+dt <- 1/252
+m <- mean(R)
+s <- sd(R)
+sig <- s/sqrt(dt)
+mu <- m/dt + (sig^2)/2
+data.frame(mu = mu, sig = sig)
+```
+# 4. After calibration, simulate the future price over a one-year period based on the closing price from  2022-09-30. Create at least 1000 simulations and provide a couple of plots as a summary. 
+```{r}
+N <- 10^5
+dt <- 1/252
+T_end <- 1 # one year from now
+periods <- T_end/dt # number of days to simulate ahead
+S0 <- as.numeric(P["2022-09-30",]) # last price of SPY
+drift <- mu - (sig^2)/2
+sim_Geo_BM <- function(n,drift,sig) {
+  set.seed(n)
+  R_seq <- rnorm(periods,drift*dt,sig*sqrt(dt)) # need to simulate returns 
+  S <- S0*exp(c(0,cumsum(R_seq))) # take the exp of returns
+  return(S)
+}
+S_mat <- sapply(1:N,function(x) sim_Geo_BM(x,drift,sig) )
+data.frame(True = S0*exp(mu*T_end), Simulated = mean(S_mat[nrow(S_mat),]))
+true_var <- (S0^2)*(exp(T_end*sig^2) - 1)*exp((2*T_end*mu))
+sim_var <- var(S_mat[nrow(S_mat),])
+data.frame(True_Variance = true_var, Sim_Variance = sim_var )
+```
+#5.What is the one-year VaR(0.05)?
+
+```{r}
+S_end <- S_mat[nrow(S_mat),]
+
+S_t_bar <- mean(S_end)
+Q_t_c <- quantile(S_end,0.05)
+VaR_0.05_d <- S_t_bar - Q_t_c
+VaR_0.05_d
+```
+
+
+```{r}
+VaR_c_f <- function(x) S_t_bar - quantile(S_end,x)
+c_seq <- seq(0.1,0.001,length = 20)
+VaR_seq <- VaR_c_f(c_seq)
+plot(VaR_seq~c_seq, pch = 20) 
+lines(predict(loess(VaR_seq~c_seq),c_seq) ~ c_seq, lty = 2) 
+grid(10)
+```
+
+#6.Repeat the above tasks using weekly returns and report the VaR(0.05).
+```{r}
+dt <- 1/52 # for weekly
+periods <- T_end/dt # update number of periods m <- mean(R_w)
+s <- sd(R_w)
+sig_w <- s/sqrt(dt)
+mu_w <- m/dt + (sig_w^2)/2
+data.frame(mu = mu_w, sig = sig_w)
+
+```
+
+
+```{r}
+cor(R,lag(R),use = "pairwise")
+```
+
+
+```{r}
+cor(R_w,lag(R_w),use = "pairwise")
+```
+```{r}
+#Note that expected value does nit change that much from daily since μ estimate did not change much:
+N <- 10^5
+drift_w <- mu_w - (sig_w^2)/2
+S_mat <- sapply(1:N,function(x) sim_Geo_BM(x,drift_w,sig_w) )
+data.frame(True = S0*exp(mu_w*T_end), Simulated = mean(S_mat[nrow(S_mat),]))
+```
+
+
+```{r}
+true_var <- (S0^2)*(exp(T_end*sig_w^2) - 1)*exp((2*T_end*mu_w))
+sim_var <- var(S_mat[nrow(S_mat),])
+data.frame(True_Variance = true_var, Sim_Variance = sim_var )
+```
+
+
+```{r}
+S_end <- S_mat[nrow(S_mat),]
+S_t_bar <- mean(S_end)
+Q_t_c <- quantile(S_end,0.05)
+VaR_0.05 <- S_t_bar - Q_t_c
+VaR_0.05
+```
+
+#7.How do the results from tasks 5 and 6 compare? Should it matter whether it is daily or weekly
+```{r}
+
+#
+#Main Takeaway: the more we aggregate returns using the iid assumption, the more we are likely #to overstate/understate the true risk of the asset/portfolio. It is important to take into #consideration whether the iid assumption is strongly or weakly rejected. For this reason, we #observe different values when we weekly versus daily regardless of the computed metric of #interest.
+#
+
+```
+
+#8.Finally, suppose that you work with the weekly data. Let us consider some sensitivity #analysis and address the following questions:
+#1How much does the one-year VaR(0.05) increase if the annual volatility increases by 5%? 
+#2Is the relationship between one-year VaR(0.05) and the annual volatility linear? 
+```{r}
+#Part1
+N <- 10^3
+VaR_sig_fun <- function(sig_value) {
+  S_mat <- sapply(1:N,function(x) sim_Geo_BM(x,drift_w,sig_value) ) 
+  S_end <-S_mat[nrow(S_mat),]
+  S_t_bar <- mean(S_end)
+  Q_t_c <- quantile(S_end,0.05)
+  VaR_0.05 <- S_t_bar - Q_t_c
+  return(VaR_0.05)
+}
+sig_seq <- seq(0.1,0.5,length = 20)
+VaR_seq <- sapply(sig_seq,VaR_sig_fun)
+plot(VaR_seq~sig_seq,type = "l")
+```
+
+
+```{r}
+VaR_sig_fun(sig_w + 0.05)/VaR_sig_fun(sig_w) - 1
+
+```
+
+```{r}
+#Part 2
+VaR_sig_fun(sig_w + 0.1)/VaR_sig_fun(sig_w + 0.05) - 1
+```
+
+
+```{r}
+VaR_sig_fun(sig_w + 0.2)/VaR_sig_fun(sig_w + 0.15) - 1
+```
+
+
+```{r}
+
+VaR_sig_fun(sig_w + 0.4)/VaR_sig_fun(sig_w + 0.35) - 1
+
+```
+
+
+```{r}
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

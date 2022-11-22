@@ -1,0 +1,292 @@
+---
+title: "LAB1 RZ"
+author: "Rui Zong"
+date: "11/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+#Task 1.
+## R Markdown
+#Go to Yahoo Finance and download historical data for SPY and IEF ETFs, dating from 2004 to 2021. Compute the daily log returns using the adjusted close price column. This should result in two time series (two columns). Based on this, report the annual mean return and volatility for each ETF. 
+
+#The first approach to answer this is to scale daily average returns and volatility (standard deviation) to reflect annual values - same as above (1 point)
+
+#The other approach is to compute annual rather than daily returns. Given the annual return time series compute the average and volatility (1 point)
+
+#How do both results compare? (1 point)
+
+```{r cars}
+library(quantmod)
+rm(list = ls())
+symbols <- c("SPY","IEF")
+get_tic_function <- function(x) get(getSymbols(x,from ="1990-01-01")) 
+P_list <- lapply(symbols,get_tic_function)
+get_adj_price <- function(x) x[,6] 
+P_adj_list <- lapply(P_list,get_adj_price)
+head(P_adj_list[[1]])
+```
+
+
+```{r cars}
+head(P_adj_list[[2]])
+```
+
+```{r}
+P <- Reduce(merge,P_adj_list)
+P <- P["2004/2021",]
+names(P) <- symbols
+R <- na.omit(log(P/lag(P)))
+summary(R)
+```
+
+
+```{r}
+library(lubridate)
+choose_years <- 2004:2021
+R_sub <- R[year(R) %in% choose_years,]
+range(date(R_sub))
+```
+
+
+```{r}
+Mu_A <- 252*apply(R_sub,2,mean)
+Sig_A <- sqrt(252)*apply(R_sub,2,sd)
+SR_A <- Mu_A/Sig_A
+result <- data.frame(cbind(Mu_A,Sig_A,SR_A))
+colnames(result) <- c("Mean","Volatility","SR")
+result
+```
+
+
+```{r}
+P_A <- apply.yearly(P,last)
+R_A <- na.omit(log(P_A/lag(P_A)))
+Mu_A2 <- apply(R_A,2,mean)
+Mu_A2
+```
+
+```{r cars}
+252*apply(R_sub["2005/2021"],2,mean)
+```
+
+
+```{r cars}
+avg_days <- mean(apply.yearly(R_sub["2005/2021"],nrow))
+avg_days
+```
+
+
+```{r cars}
+Mu_A3 <- avg_days*apply(R_sub["2005/2021"],2,mean)
+data.frame(Annual_Data = Mu_A2, Scaled_Date = Mu_A3)
+```
+```{r}
+Sig_A2 <- apply(R_A,2,sd)
+Sig_A3 <- sqrt(avg_days)*apply(R_sub["2005/2021"],2,sd)
+data.frame(Annual_Data = Sig_A2, Scaled_Date = Sig_A3)
+```
+
+
+```{r}
+cor(R$SPY,lag(R$SPY),use = "pairwise")
+```
+
+
+```{r}
+
+cor(R$IEF,lag(R$IEF),use = "pairwise")
+```
+
+#Task 5 Compute the correlation coefficient between the two ETFs and report the covariance matrix.
+```{r}
+rho_12 <- cor(R_sub$SPY,R_sub$IEF)
+sig_12 <- rho_12*Sig_A[1]*Sig_A[2]
+Sig_mat <- matrix(c(Sig_A[1]^2,sig_12,sig_12,Sig_A[2]^2),2)
+Sig_mat
+```
+
+```{r}
+Sig_mat_d <- var(R_sub)
+Sig_mat_d
+```
+
+
+```{r}
+Sig_mat_A <- var(R_sub*sqrt(252))
+Sig_mat_A
+```
+
+
+```{r}
+Gamma_mat <- diag(Sig_A)
+Gamma_mat
+```
+
+
+```{r}
+Lambda_mat <- cor(R_sub)
+Gamma_mat
+
+```
+
+
+```{r}
+Sig_mat_A2 <- Gamma_mat%*%Lambda_mat%*%Gamma_mat
+Sig_mat_A2
+```
+
+#Task 6
+You are interested in allocating  to the SPY and  to the IEF. For a sequence of , compute the portfolio mean return and volatility. As a final summary, plot the former  (y-axis) versus the latter (x-axis). Given this frontier, highlight the Sharpe portfolio and address the following:
+
+What does the frontier tell us about holding the IEF alone versus a combination of the two? (1 point)
+Which point from the frontier would you choose? (1 point)
+
+```{r}
+#Approach 1
+w_function <- function(w) {
+  w_vec <- matrix(c(w,1-w),2,1)
+  mu_p <- t(w_vec)%*%Mu_A
+  sig_p <- sqrt(t(w_vec)%*%Sig_mat_A2%*%w_vec) 
+  result <- c(mu_p,sig_p)
+  return(result)
+}
+
+
+w_function(1)
+w_function(0)
+w_function(0.5)
+```
+
+
+```{r}
+w_seq <- seq(0,1,length = 100)
+ds <- t(sapply(w_seq,w_function))
+ds <- data.frame(ds)
+names(ds) <- c("mu_p","sig_p")
+summary(ds)
+```
+
+
+```{r}
+plot(mu_p ~ sig_p,data = ds,
+     type = "l", ylab = expression(mu[p]),
+     xlab = expression(sigma[p]),
+      xlim = c(0,0.1),
+     ylim = c(0.01,0.15))
+grid(10)
+```
+
+
+```{r}
+R_F <- 0.02
+ds$SR <- (ds$mu_p-R_F)/ds$sig_p
+plot(mu_p ~ sig_p,data = ds,
+     type = "l", ylab = expression(mu[p]),
+     xlab = expression(sigma[p]),
+      xlim = c(0,0.1),
+     ylim = c(0.01,0.15))
+points(mu_p~sig_p,data = ds[which.min(ds$sig_p),],
+       col = 1,pch = 20,cex = 1.5)
+points(mu_p~sig_p,data = ds[which.max(ds$SR),],
+       col = 1,pch = 20,cex = 1.5)
+grid(10)
+```
+
+#Approach 2 In the second approach, we can compute the portfolio returns directly using the time series rather than the covariance matrix and the mean vector
+```{r}
+w_function <- function(w) {
+  w_vec <- matrix(c(w,1-w),2,1)
+  R_p <- R_sub%*%w_vec
+  mu_p <- mean(R_p)*252
+  sig_p <- sd(R_p)*sqrt(252)
+  result <- c(mu_p,sig_p) 
+  return(result)
+}
+```
+
+
+```{r}
+w_seq <- seq(0,1,length = 100)
+ds <- t(sapply(w_seq,w_function))
+ds <- data.frame(ds)
+names(ds) <- c("mu_p","sig_p")
+ds$SR <- (ds$mu_p-R_F)/ds$sig_p
+summary(ds)
+```
+
+#7.Given the Sharpe portfolio, suppose that you have access to a risk-free asset. 
+Your allocation problem now is denoted by a combination between the Sharpe portfolio and the risk-free asset. 
+In particular, you allocate w to the Sharpe portfolio and  1-w to the risk-free asset. For a sequence of , compute the portfolio mean return and volatility. As a final summary, plot the former  (y-axis) versus the latter (x-axis) and address the following:
+
+What does it tell us in terms of the capital market line (CML)? (1 point)
+What does a negative (respectively positive) weight in the risk-free asset imply? Elaborate. (1 point)
+```{r}
+w_SR <- w_seq[which.max(ds$SR)]
+SR_port <- matrix(c(w_SR,1-w_SR),2,1)
+SR_port
+```
+
+
+```{r}
+w_function <- function(w) { 
+  R_risky <- R_sub%*%SR_port
+  R_RF <- R_F/252
+  R_p <- R_risky*w + R_RF*(1-w) 
+  mu_p <- mean(R_p)*252
+  sig_p <- sd(R_p)*sqrt(252)
+  result <- c(mu_p,sig_p)
+  return(result)
+}
+```
+
+
+```{r}
+w_seq <- seq(0,2,length = 100)
+ds2 <- t(sapply(w_seq,w_function))
+ds2 <- data.frame(ds2)
+names(ds2) <- c("mu_p","sig_p")
+ds2$SR <- (ds2$mu_p-R_F)/ds2$sig_p
+summary(ds2)
+```
+
+
+```{r}
+(ds2$mu_p[50] - ds2$mu_p[1])/(ds2$sig_p[50] - ds2$sig_p[1])
+```
+
+
+```{r}
+plot(mu_p ~ sig_p,data = ds,
+     type = "l", ylab = expression(mu[p]),
+     xlab = expression(sigma[p]),
+     xlim = c(0,0.1),
+     ylim = c(0.01,0.15))
+points(mu_p~sig_p,data = ds[which.min(ds$sig_p),],
+       col = 1,pch = 20,cex = 1.5)
+points(mu_p~sig_p,data = ds[which.max(ds$SR),],
+       col = 1,pch = 20,cex = 1.5)
+lines(mu_p~sig_p,data = ds2,col = 2)
+grid(10)
+
+```
+```{r}
+summary(lm(mu_p ~sig_p,data = ds2))
+```
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
